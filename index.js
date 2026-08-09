@@ -362,7 +362,7 @@ const server = Bun.serve({
                                     delete IP_TABLES[socket.data.address];
                                 }
                             }
-                        } catch (e) { console.error; }
+                        } catch (e) { console.error(e) };
                     }
                     break;
             }
@@ -435,7 +435,7 @@ const server = Bun.serve({
                         }
 
                         lobby.ownerSocket.send(new Uint8Array([0x01, ...u16ToU8(socket.data.clientID), ...message]));
-                    } catch (e) { }
+                    } catch (e) { console.error(e) };
                 } break;
             }
         }
