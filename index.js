@@ -44,11 +44,7 @@ setInterval(() => {
 
 function respondServerfetch(request) {
     const requestIP = server.requestIP(request);
-
-    if (requestIP === null) {
-        return new Response("Invalid IP", { status: 403 });
-    }
-
+    if (requestIP === null) return new Response("Invalid IP", { status: 403 });
     const url = new URL(request.url);
     switch (url.pathname) {
         case "/lobby/list": return Response.json(Lobby.toJSONResponse());
@@ -129,7 +125,7 @@ function respondServerfetch(request) {
                 });
             }
         };
-        case "/uuid/check": {
+        case "/uuid/check": 
             try {
                 const searchParams = url.searchParams;
                 const uuid = searchParams.get("uuid");
@@ -177,16 +173,15 @@ function respondServerfetch(request) {
                     ok: false,
                     error: "Internal server error"
                 });
-            }}
-        case "/analytics/get":
-            return Response.json(analytics);
+            };
+        case "/analytics/get": return Response.json(analytics);
         case "/ws/lobby": {
             if (server.upgrade(request, {
                 data: {
                     address: requestIP.address,
                     internalID: connectionID++,
                     type: SOCKET_TYPE_LOBBY,
-                    url: url,
+                    url,
                     analytics: null
                 }
             })) {
@@ -201,7 +196,7 @@ function respondServerfetch(request) {
                     address: requestIP.address,
                     internalID: connectionID++,
                     type: SOCKET_TYPE_CLIENT,
-                    url: url,
+                    url,
                     analytics: null
                 }
             })) {
@@ -210,8 +205,7 @@ function respondServerfetch(request) {
 
             return new Response("Upgrade Required", { status: 400 });
         };
-        default:
-            return new Response("Page not found", { status: 404 });
+        default: return new Response("Page not found", { status: 404 });
     }
 }
 
@@ -237,10 +231,7 @@ const server = Bun.serve({
             /** @type {URLSearchParams} */
             const search = socket.data.url.searchParams;
 
-            if (!search.has("analytics")) {
-                socket.terminate();
-                return;
-            }
+            if (!search.has("analytics")) return socket.terminate();
 
             try {
                 socket.data.analytics = AnalyticsEntry.fromBase64(decodeURIComponent(search.get("analytics")));
@@ -340,15 +331,11 @@ const server = Bun.serve({
         close(socket, code, reason) {
             console.log(`WS CLOSED: code=${code}, type=${socket.data.type}, reason=${reason}`);
             if (code === 1006) console.log("BUN IDLE TIMEOUT — FIX: idleTimeout: 0");
-            if (socket.data.analytics) {
-                socket.data.analytics.end();
-            }
+            if (socket.data.analytics) socket.data.analytics.end();
 
             switch (socket.data.type) {
                 case SOCKET_TYPE_LOBBY: {
-                    if (socket.data.lobby) {
-                        socket.data.lobby.destroy();
-                    }
+                    if (socket.data.lobby) socket.data.lobby.destroy();
                 } break;
                 case SOCKET_TYPE_CLIENT:
                     if (socket.data.lobby) {
@@ -369,9 +356,7 @@ const server = Bun.serve({
         },
 
         message(socket, data) {
-            if (typeof data === "string" || data.byteLength === 0) {
-                return;
-            }
+            if (typeof data === "string" || data.byteLength === 0) return;
 
             switch (socket.data.type) {
                 case SOCKET_TYPE_LOBBY: {
@@ -420,20 +405,14 @@ const server = Bun.serve({
                     }
                 } break;
                 case SOCKET_TYPE_CLIENT: {
-                    if (!socket.data.lobby) {
-                        return;
-                    }
+                    if (!socket.data.lobby) return;
 
                     /** @type {Lobby} */
                     const lobby = socket.data.lobby;
 
                     try {
                         const message = new Uint8Array(data);
-
-                        if (message.length === 0 || message.length > 1024) {
-                            return;
-                        }
-
+                        if (message.length === 0 || message.length > 1024) return;
                         lobby.ownerSocket.send(new Uint8Array([0x01, ...u16ToU8(socket.data.clientID), ...message]));
                     } catch (e) { console.error(e) };
                 } break;
