@@ -224,7 +224,6 @@ const server = Bun.serve({
     websocket: {
         perMessageDeflate: true,
         idleTimeout: 0,  
-        sendPings: true,
         open(socket) {
             socket.binaryType = "arraybuffer";
 
