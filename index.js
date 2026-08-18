@@ -235,7 +235,7 @@ const server = Bun.serve({
             try {
                 socket.data.analytics = AnalyticsEntry.fromBase64(decodeURIComponent(search.get("analytics")));
             } catch (e) {
-                console.log(e);
+                console.error(e);
                 socket.terminate();
                 return;
             }
@@ -301,23 +301,14 @@ const server = Bun.serve({
                         /** @type {string} */
                         const partyURL = search.get("partyURL");
                         const uuidData = getUUIDData(uuid);
-
-                        if (!uuidData || uuidData.expiresAt < new Date() || !Lobby.lobbies[partyURL]) {
-                            socket.terminate();
-                            return;
-                        }
-
+                        if (!uuidData || uuidData.expiresAt < new Date() || !Lobby.lobbies[partyURL]) return socket.terminate();
                         IP_TABLES[socket.data.address] = IP_TABLES[socket.data.address] ? IP_TABLES[socket.data.address] + 1 : 1;
-
                         const lobby = Lobby.lobbies[partyURL];
                         lobby.addClient(socket, uuid, search.get("clientKey") || "");
                         socket.data.lobby = lobby;
-
-                        socket.data.analytics.define("client", {
-                            gamemode: lobby.gamemode,
-                            biome: lobby.biome
-                        });
+                        socket.data.analytics.define("client", { gamemode: lobby.gamemode, biome: lobby.biome });
                     } catch (e) {
+                        console.error(e)
                         socket.terminate();
                     }
                     break;
@@ -399,7 +390,7 @@ const server = Bun.serve({
                                     });
                                     entry.end(totalTime);
                                 }
-                            } catch (e) {}
+                            } catch (e) { console.error(e) };
                             break;
                     }
                 } break;
