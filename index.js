@@ -32,102 +32,50 @@ const tripsFilter = message => patterns.some(p => p.test(message));
 
 setInterval(() => {
     for (const ip in UUID_RATE_LIMITS) {
-        if (UUID_RATE_LIMITS[ip] > 0) {
-            UUID_RATE_LIMITS[ip]--;
-        }
-
-        if (UUID_RATE_LIMITS[ip] === 0) {
-            delete UUID_RATE_LIMITS[ip];
-        }
+        if (UUID_RATE_LIMITS[ip] > 0) UUID_RATE_LIMITS[ip]--;
+        if (UUID_RATE_LIMITS[ip] === 0)  delete UUID_RATE_LIMITS[ip];
     }
 }, 6E4);
 
-function respondServerfetch(request) {
+/** @param {Request} request */
+async function respondServerfetch(request) {
     const requestIP = server.requestIP(request);
     if (requestIP === null) return new Response("Invalid IP", { status: 403 });
+    const address = requestIP.address;
     const url = new URL(request.url);
+    const searchParams = url.searchParams;
+    const cookie = request.headers.get("cookie");
+    const data = { address, url, analytics: null };
+
     switch (url.pathname) {
         case "/lobby/list": return Response.json(Lobby.toJSONResponse());
         case "/lobby/get": {
-            const id = url.searchParams.get("partyURL");
-
-            if (!id) {
-                return Response.json(null);
-            }
-
+            const id = searchParams.get("partyURL");
+            if (!id) return Response.json(null);
             const lobby = Lobby.lobbies[id];
-
-            if (!lobby) {
-                return Response.json(null);
-            }
-
+            if (!lobby) return Response.json(null);
             return Response.json(lobby.toJSON());
         };
         case "/lobby/resources": {
-            const id = url.searchParams.get("partyURL");
-
-            if (!id) {
-                return Response.json(null);
-            }
-
+            const id = searchParams.get("partyURL");
+            if (!id) return Response.json(null);
             const lobby = Lobby.lobbies[id];
-
-            if (!lobby) {
-                return Response.json(null);
-            }
-
+            if (!lobby) return Response.json(null);
             return Response.json(lobby.resources);
         };
         case "/uuid/get": {
             try {
-                const ip = requestIP.address;
-
-                if (!ip) {
-                    return Response.json({
-                        ok: false,
-                        error: "Invalid IP"
-                    });
-                }
-
-                if (UUID_RATE_LIMITS[ip] >= IP_LIMIT) {
-                    return Response.json({
-                        ok: false,
-                        error: "Rate limit exceeded"
-                    });
-                }
-
-                const searchParams = url.searchParams;
+                if (!address) return Response.json({ ok: false, error: "Invalid IP" });
+                if (UUID_RATE_LIMITS[address] >= IP_LIMIT) return Response.json({ ok: false, error: "Rate limit exceeded" });
                 const existing = searchParams.get("existing");
-
-                if (!existing || (existing !== "false" && existing.length !== 36)) {
-                    return Response.json({
-                        ok: false,
-                        error: "Invalid existing UUID"
-                    });
-                }
-
-                const data = standardGetUUID(existing, ip);
-
-                if (data.uuid !== existing) {
-                    UUID_RATE_LIMITS[ip] = UUID_RATE_LIMITS[ip] ? UUID_RATE_LIMITS[ip] + 1 : 1;
-                }
-
-                return Response.json({
-                    ok: true,
-                    renewed: data.uuid !== existing,
-                    ...data
-                });
-
-            } catch (e) {
-                return Response.json({
-                    ok: false,
-                    error: `Internal server error: ${e}`
-                });
-            }
+                if (!existing || (existing !== "false" && existing.length !== 36)) return Response.json({ ok: false, error: "Invalid existing UUID" });
+                const data = standardGetUUID(existing, address);
+                if (data.uuid !== existing)  UUID_RATE_LIMITS[address] = UUID_RATE_LIMITS[address] ? UUID_RATE_LIMITS[address] + 1 : 1;
+                return Response.json({ ok: true, renewed: data.uuid !== existing, ...data });
+            } catch (e) { return Response.json({ ok: false, error: `Internal server error: ${e}` }) };
         };
         case "/uuid/check": 
             try {
-                const searchParams = url.searchParams;
                 const uuid = searchParams.get("uuid");
 
                 if (!uuid || uuid.length !== 36) {
@@ -176,34 +124,12 @@ function respondServerfetch(request) {
             };
         case "/analytics/get": return Response.json(analytics);
         case "/ws/lobby": {
-            if (server.upgrade(request, {
-                data: {
-                    address: requestIP.address,
-                    internalID: connectionID++,
-                    type: SOCKET_TYPE_LOBBY,
-                    url,
-                    analytics: null
-                }
-            })) {
-                return undefined;
-            }
-
-            return new Response("Upgrade Required", { status: 400 });
+            data.type = SOCKET_TYPE_LOBBY;
+            break;
         };
         case "/ws/client": {
-            if (server.upgrade(request, {
-                data: {
-                    address: requestIP.address,
-                    internalID: connectionID++,
-                    type: SOCKET_TYPE_CLIENT,
-                    url,
-                    analytics: null
-                }
-            })) {
-                return undefined;
-            }
-
-            return new Response("Upgrade Required", { status: 400 });
+            data.type = SOCKET_TYPE_CLIENT;
+            break;
         };
         default: return new Response("Page not found", { status: 404 });
     }
@@ -221,8 +147,8 @@ function respondServerfetch(request) {
 }
 
 const server = Bun.serve({
-    fetch(request) {
-        const response = respondServerfetch(request);
+    async fetch(request) {
+        const response = await respondServerfetch(request);
 
         if (response) {
             response.headers.set('Access-Control-Allow-Origin', '*');
@@ -240,16 +166,6 @@ const server = Bun.serve({
 
             /** @type {URLSearchParams} */
             const search = socket.data.url.searchParams;
-
-            if (!search.has("analytics")) return socket.terminate();
-
-            try {
-                socket.data.analytics = AnalyticsEntry.fromBase64(decodeURIComponent(search.get("analytics")));
-            } catch (e) {
-                console.log(e);
-                socket.terminate();
-                return;
-            }
 
             switch (socket.data.type) {
                 case SOCKET_TYPE_LOBBY:
@@ -308,20 +224,13 @@ const server = Bun.serve({
                     }
 
                     try {
-                        const uuid = search.get("uuid");
                         /** @type {string} */
                         const partyURL = search.get("partyURL");
-                        const uuidData = getUUIDData(uuid);
-
-                        if (!uuidData || uuidData.expiresAt < new Date() || !Lobby.lobbies[partyURL]) {
-                            socket.terminate();
-                            return;
-                        }
 
                         IP_TABLES[socket.data.address] = IP_TABLES[socket.data.address] ? IP_TABLES[socket.data.address] + 1 : 1;
 
                         const lobby = Lobby.lobbies[partyURL];
-                        lobby.addClient(socket, uuid, search.get("clientKey") || "");
+                        lobby.addClient(socket, socket.data.userId, search.get("clientKey") || "");
                         socket.data.lobby = lobby;
 
                         socket.data.analytics.define("client", {
@@ -329,6 +238,7 @@ const server = Bun.serve({
                             biome: lobby.biome
                         });
                     } catch (e) {
+                        console.error(e);
                         socket.terminate();
                     }
                     break;
@@ -339,8 +249,7 @@ const server = Bun.serve({
         },
 
         close(socket, code, reason) {
-            console.log(`WS CLOSED: code=${code}, type=${socket.data.type}, reason=${reason}`);
-            if (code === 1006) console.log("BUN IDLE TIMEOUT — FIX: idleTimeout: 0");
+            console.log(`WS CLOSED: code=${code}, type=${socket.data.type ? 'player' : 'lobby'}, reason=${reason}`);
             if (socket.data.analytics) socket.data.analytics.end();
 
             switch (socket.data.type) {
@@ -422,7 +331,7 @@ const server = Bun.serve({
 
                     try {
                         const message = new Uint8Array(data);
-                        if (message.length === 0 || message.length > 1024) return;
+                        if (message.length === 0 || message.length > 1024) return console.log("Large message skipped.");
                         lobby.ownerSocket.send(new Uint8Array([0x01, ...u16ToU8(socket.data.clientID), ...message]));
                     } catch (e) { console.error(e) };
                 } break;
