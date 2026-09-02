@@ -228,17 +228,11 @@ const server = Bun.serve({
                         const partyURL = search.get("partyURL");
 
                         IP_TABLES[socket.data.address] = IP_TABLES[socket.data.address] ? IP_TABLES[socket.data.address] + 1 : 1;
-
                         const lobby = Lobby.lobbies[partyURL];
                         lobby.addClient(socket, socket.data.userId, search.get("clientKey") || "");
                         socket.data.lobby = lobby;
-
-                        socket.data.analytics.define("client", {
-                            gamemode: lobby.gamemode,
-                            biome: lobby.biome
-                        });
+                        socket.data.analytics.define("client", { gamemode: lobby.gamemode, biome: lobby.biome });
                     } catch (e) {
-                        console.error(e);
                         socket.terminate();
                     }
                     break;
@@ -319,7 +313,7 @@ const server = Bun.serve({
                                     });
                                     entry.end(totalTime);
                                 }
-                            } catch (e) {}
+                            } catch (e) { console.error(e) };
                             break;
                     }
                 } break;
