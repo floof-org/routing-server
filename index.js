@@ -207,6 +207,17 @@ function respondServerfetch(request) {
         };
         default: return new Response("Page not found", { status: 404 });
     }
+    if (url.pathname.startsWith('/ws/')) {
+        if (searchParams.get('secretKey') !== process.env.TRUSTED_admin){
+            const userId = await fetch(`${process.env.AUTH_SERVER}/api/user/id`, { headers: { cookie }}).then(response => response.json());
+            if (userId?.error || !searchParams.has("analytics")) return new Response("Unauthorized", { status: 401 });
+            data.userId = userId;
+        }
+        try { data.analytics = AnalyticsEntry.fromBase64(decodeURIComponent(searchParams.get("analytics")));
+        } catch (e) { return console.log(e) };
+        if (server.upgrade(request, { data })) return undefined;
+        else return new Response("Upgrade Required", { status: 400 });
+    }
 }
 
 const server = Bun.serve({
